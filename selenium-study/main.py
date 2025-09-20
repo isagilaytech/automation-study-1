@@ -1,63 +1,82 @@
 import pandas as pd
 import time as t
-import tabula as tb
 
+from .utils import scraper_functions as sf
+from pathlib import Path
 from webdriver_manager.firefox import GeckoDriverManager
 
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import NoSuchElementException
 
-from bs4 import BeautifulSoup as bs
+# File path constants
+OUTPUT_FOLDER = Path('selenium-study/data/res')
+SOURCE_FOLDER = Path('selenium-study/data')
 
 # This line automatically downloads the correct geckodriver and sets the path
 driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()))
+# driver = webdriver.Firefox()
 
 # Load the data
-file_path = 'data/vocab_list.xlsx'
+file_path = SOURCE_FOLDER / 'vocab_list.xlsx'
 vocab_list_df = pd.read_excel(file_path, sheet_name='N2_2文字_名詞')
-vocab_list_df = pd.read_excel(file_path, sheet_name='test')
-
-print(vocab_list_df.head())
-print(vocab_list_df.word[0])
+# vocab_list_df = pd.read_excel(file_path, sheet_name='test')
 
 # Use the driver to open Firefox
 driver.get("https://jisho.org/")
 
+word_meanings = [] # list to store results' meaning
+word_tags = [] # list to store results' tags
+
 search_bar = driver.find_element(By.ID, "keyword")
 
-word_to_search = vocab_list_df.word[0]
-search_bar.send_keys(word_to_search)
-search_bar.send_keys(Keys.ENTER)
-
-t.sleep(3)
-
-soup = bs(driver.page_source, 'html.parser')
-
-# meanings_div = soup.find_all('div', class_='meanings-wrapper')
-topmost_result = soup.find('div', class_='concept_light')
-
-meanings_list_tags = topmost_result.find('div', class_='concept_light-meanings').find_all('div', class_='meaning-tags')
-meanings_list = topmost_result.find('div', class_='concept_light-meanings').find_all('div', class_='meaning-wrapper')
-
-temp_meaning = ''
-for i in range(len(meanings_list_tags)):
-  item = meanings_list_tags[i]
-  if(item.text != 'Wikipedia definition' or item.text != 'Notes'):
-    temp_meaning = ';'.join([temp_meaning, meanings_list[i].find('span', class_='meaning-meaning').text])
-
-  print(item.text)
-
-for word in vocab_list_df.word:
-  search_bar = driver.find_element(By.ID, "keyword")
-  search_bar.send_keys(word)
+# Loop over the vocabulary list
+for i in range(len(vocab_list_df)):
+  # Input word in the search bar and perform search
+  word_to_search = vocab_list_df.word[i]
+  search_bar.send_keys(word_to_search)
   search_bar.send_keys(Keys.ENTER)
-
-
   
+  t.sleep(3)
+  
+  # Get results using helper function
+  results = sf.get_data(driver.page_source)
 
+  # Add results to lists
+  word_meanings.append(results['meaning'])
+  word_tags.append(results['tags'])
+
+  # Clear search bar
+  search_bar = driver.find_element(By.ID, "keyword")
+  search_bar.clear()
+
+# Add results to the df
+vocab_list_df.meaning = word_meanings
+vocab_list_df.types = word_tags
+
+# Save results
+file_sheet_name_suffix = t.strftime('%y%m%d_%H%M%S', t.localtime())
+file_name = 'processed' + file_sheet_name_suffix + '.xlsx'
+vocab_list_df.to_excel(
+  OUTPUT_FOLDER / file_name
+  , index=False
+  , sheet_name='results_' + file_sheet_name_suffix
+)
+
+# Todo: Close window once the search is done
+# Todo: Time elapsed and success notif maybe?
+# Todo: Add to helper function on extracting sample sentences as well
+
+# # TEST
+# word_to_search = vocab_list_df.word[0]
+# search_bar.send_keys(word_to_search)
+# search_bar.send_keys(Keys.ENTER)
+# t.sleep(3)
+# results = sf.get_data(driver.page_source)
+# print(results)
+# search_bar = driver.find_element(By.ID, "keyword")
+# search_bar.clear()
 
 """
 search_bar = driver.find_element(By.ID, "keyword")
